@@ -166,3 +166,10 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # SECURE_CONTENT_TYPE_NOSNIFF = True
 # X_FRAME_OPTIONS = 'DENY'
 # CSRF_TRUSTED_ORIGINS = ['https://yourdomain.com']
+# ─────────────────────────────────────────────────────────────
+# АУТЕНТИФИКАЦИЯ (редиректы)
+# ─────────────────────────────────────────────────────────────
+
+LOGIN_URL = 'login'
+LOGIN_REDIRECT_URL = 'post_list'
+LOGOUT_REDIRECT_URL = 'post_list'
