@@ -1,0 +1,37 @@
+# ─── Python ───
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+
+# ─── Виртуальное окружение ───
+venv/
+.venv/
+env/
+ENV/
+
+# ─── Django ───
+*.log
+db.sqlite3
+db.sqlite3.backup
+staticfiles/
+media/
+
+# ─── Секреты ───
+.env
+.env.*
+!.env.example
+
+# ─── IDE / редакторы ───
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ─── ОС ───
+.DS_Store
+Thumbs.db
