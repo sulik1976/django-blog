@@ -1,3 +1,5 @@
+import markdown
+
 from django.conf import settings
 from django.db import models
 from django.urls import reverse
@@ -94,6 +96,25 @@ class Post(models.Model):
 
     def get_absolute_url(self):
         return reverse('post_detail', kwargs={'slug': self.slug})
+
+    def get_content_html(self):
+        """Рендер Markdown в HTML с подсветкой кода и таблицами."""
+        return markdown.markdown(
+            self.content,
+            extensions=[
+                'fenced_code',     # ```код```
+                'codehilite',      # подсветка синтаксиса (Pygments)
+                'tables',          # таблицы
+                'toc',             # якоря для заголовков (опционально)
+                'nl2br',           # перенос строки = <br>
+            ],
+            extension_configs={
+                'codehilite': {
+                    'css_class': 'codehilite',
+                    'guess_lang': False,
+                },
+            },
+        )
 
 
 class Comment(models.Model):

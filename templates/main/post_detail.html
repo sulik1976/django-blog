@@ -10,7 +10,7 @@
 
     <h1 class="mb-3">{{ post.title }}</h1>
     <div class="text-muted mb-3">
-        {{ post.author.username }}
+        {{ post.author.get_full_name|default:post.author.username }}
         {% if post.category %}· <a href="{{ post.category.get_absolute_url }}">{{ post.category.name }}</a>{% endif %}
         · {{ post.created_at|date:"d.m.Y H:i" }}
         {% if post.status == 'draft' %}<span class="badge bg-warning text-dark">Черновик</span>{% endif %}
@@ -20,7 +20,7 @@
         <img src="{{ post.cover.url }}" class="img-fluid rounded mb-4" alt="{{ post.title }}">
     {% endif %}
 
-    <div class="post-content mb-4" style="white-space: pre-line;">{{ post.content }}</div>
+    <div class="post-content mb-4">{{ post.get_content_html|safe }}</div>
 
     {% if post.tags.all %}
         <div class="mb-4">
@@ -50,7 +50,7 @@
             <div class="card mb-2">
                 <div class="card-body">
                     <div class="d-flex justify-content-between">
-                        <strong>{{ comment.author.username }}</strong>
+                        <strong>{{ comment.author.get_full_name|default:comment.author.username }}</strong>
                         <small class="text-muted">{{ comment.created_at|date:"d.m.Y H:i" }}</small>
                     </div>
                     <p class="mb-0 mt-2">{{ comment.body|linebreaksbr }}</p>
@@ -78,8 +78,14 @@
     {% else %}
         <p class="text-muted">
             <a href="{% url 'signup' %}">Зарегистрируйтесь</a> или
-            <a href="/admin/login/">войдите</a>, чтобы оставить комментарий.
+            <a href="{% url 'login' %}">войдите</a>, чтобы оставить комментарий.
         </p>
     {% endif %}
 </section>
+
+<!-- Навигация в конце статьи -->
+<div class="mt-5 pt-4 border-top d-flex justify-content-between">
+    <a href="{% url 'post_list' %}" class="btn btn-outline-secondary">← Все статьи</a>
+    <a href="#" id="back-to-top" class="btn btn-outline-secondary">↑ Наверх</a>
+</div>
 {% endblock %}
