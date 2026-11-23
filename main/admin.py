@@ -21,7 +21,6 @@ class PostAdmin(admin.ModelAdmin):
     list_display = ('title', 'author', 'category', 'status', 'published_at', 'created_at')
     list_filter = ('status', 'category', 'tags', 'created_at')
     search_fields = ('title', 'excerpt', 'content')
-    prepopulated_fields = {'slug': ('title',)}
     filter_horizontal = ('tags',)
     date_hierarchy = 'created_at'
     list_editable = ('status',)
