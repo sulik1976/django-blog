@@ -28,7 +28,8 @@ SITES = {
     },
     "rbc": {
         "name": "РБК",
-        "rss_url": "http://static.feed.rbc.ru/rbc/internal/rss.rbc.ru/rbc.ru/mainnews.rss",
+        # Обновлённая, актуальная RSS-лента
+        "rss_url": "http://static.feed.rbc.ru/rbc/logical/footer/news.rss",
         "title_tag": ("h1", "article-entry-title"),
         "text_tag": ("p", "paragraph"),
         "cover_tag": ("img", "picture-image"),
@@ -37,14 +38,16 @@ SITES = {
 
 PHOTO_CAPTION_PATTERNS = [r'^Фото:', r'^Иллюстрация:', r'^Изображение:', r'^Picture:']
 
+
 def is_photo_caption(text):
     return any(re.match(p, text.strip(), re.IGNORECASE) for p in PHOTO_CAPTION_PATTERNS)
+
 
 def get_news_links_rss(site_key):
     """Получает список новостей из RSS-ленты."""
     config = SITES[site_key]
     feed = feedparser.parse(config["rss_url"])
-    
+
     articles = []
     for entry in feed.entries[:10]:
         articles.append({
@@ -53,6 +56,7 @@ def get_news_links_rss(site_key):
             "rss_description": entry.get("description", ""),
         })
     return articles
+
 
 def parse_full_article(article_data, site_key):
     """
@@ -66,7 +70,7 @@ def parse_full_article(article_data, site_key):
 
     text_md = ""
     cover_url = ""
-    
+
     # Пытаемся загрузить HTML статьи
     try:
         response = requests.get(link, headers=HEADERS, timeout=10)
@@ -112,6 +116,7 @@ def parse_full_article(article_data, site_key):
 
     return {"title": title, "text_md": text_md, "cover_url": cover_url}
 
+
 # ═══════════════════════════════════════════════════════════════
 # СОХРАНЕНИЕ В DJANGO
 # ═══════════════════════════════════════════════════════════════
@@ -119,6 +124,7 @@ def parse_full_article(article_data, site_key):
 def get_or_create_default_category():
     category, _ = Category.objects.get_or_create(name="Новости", defaults={'slug': 'novosti'})
     return category
+
 
 def get_or_create_default_tags(site_name):
     tag_names = ["новости", site_name, "Россия", "мир"]
@@ -128,6 +134,7 @@ def get_or_create_default_tags(site_name):
         tags.append(tag)
     return tags
 
+
 def import_news_to_django(site_key="lenta", author_username="sulik"):
     if site_key not in SITES:
         print(f"❌ Сайт '{site_key}' не поддерживается.")
@@ -135,7 +142,7 @@ def import_news_to_django(site_key="lenta", author_username="sulik"):
 
     config = SITES[site_key]
     User = get_user_model()
-    
+
     try:
         author = User.objects.get(username=author_username)
     except User.DoesNotExist:
@@ -144,7 +151,7 @@ def import_news_to_django(site_key="lenta", author_username="sulik"):
 
     default_category = get_or_create_default_category()
     default_tags = get_or_create_default_tags(config["name"])
-    
+
     print(f"🌐 Источник: {config['name']}")
     print(f"📂 Категория: {default_category.name}")
     print(f"🏷️  Теги: {', '.join(t.name for t in default_tags)}\n")
@@ -155,7 +162,7 @@ def import_news_to_django(site_key="lenta", author_username="sulik"):
     created_count = 0
     for i, data in enumerate(articles_data, 1):
         print(f"[{i}/{len(articles_data)}] {data['title']}")
-        
+
         article = parse_full_article(data, site_key)
 
         if Post.objects.filter(title=article['title']).exists():
@@ -180,7 +187,8 @@ def import_news_to_django(site_key="lenta", author_username="sulik"):
                 img_response = requests.get(article['cover_url'], headers=HEADERS, timeout=10)
                 img_response.raise_for_status()
                 ext = article['cover_url'].split('.')[-1].split('?')[0]
-                if ext.lower() not in ('jpg', 'jpeg', 'png', 'gif', 'webp'): ext = 'jpg'
+                if ext.lower() not in ('jpg', 'jpeg', 'png', 'gif', 'webp'):
+                    ext = 'jpg'
                 filename = f"{uuid.uuid4().hex}.{ext}"
                 post.cover.save(filename, ContentFile(img_response.content), save=False)
                 print("  🖼️  Обложка скачана.")
@@ -195,6 +203,6 @@ def import_news_to_django(site_key="lenta", author_username="sulik"):
         except Exception as e:
             print(f"  ❌ Ошибка БД: {e}")
 
-        time.sleep(2) # Пауза для вежливости
+        time.sleep(2)
 
     print(f"\n🎉 Импорт завершён! Создано: {created_count}")
