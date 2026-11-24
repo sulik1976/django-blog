@@ -1,3 +1,4 @@
+cat > main/importer.py << 'PYEOF'
 import re
 import time
 import uuid
@@ -15,6 +16,9 @@ HEADERS = {
                   "Chrome/120.0 Safari/537.36"
 }
 
+# ═══════════════════════════════════════════════════════════════
+# НАСТРОЙКИ САЙТОВ (RSS для ссылок + HTML для контента)
+# ═══════════════════════════════════════════════════════════════
 SITES = {
     "lenta": {
         "name": "Lenta.ru",
@@ -43,7 +47,7 @@ SITES = {
         "title_tag": ("h1", "article_title"),
         "text_tag": ("div", "article_text"),
         "cover_tag": ("img", "article_image"),
-    }
+    },
 }
 
 PHOTO_CAPTION_PATTERNS = [r'^Фото:', r'^Иллюстрация:', r'^Изображение:', r'^Picture:']
@@ -54,11 +58,19 @@ def is_photo_caption(text):
 
 
 def get_news_links_rss(site_key):
+    """Получает список новостей из RSS-ленты (с таймаутом)."""
     config = SITES[site_key]
-    feed = feedparser.parse(config["rss_url"])
+
+    try:
+        r = requests.get(config["rss_url"], headers=HEADERS, timeout=10)
+        r.raise_for_status()
+        feed = feedparser.parse(r.content)
+    except Exception as e:
+        print(f"  ❌ Не удалось загрузить RSS ({config['name']}): {e}")
+        return []
 
     articles = []
-    for entry in feed.entries[:10]:
+    for entry in feed.entries[:5]:
         articles.append({
             "title": entry.get("title", "Без заголовка"),
             "link": entry.get("link", ""),
@@ -68,6 +80,10 @@ def get_news_links_rss(site_key):
 
 
 def parse_full_article(article_data, site_key):
+    """
+    Пытается загрузить полную статью по ссылке.
+    Если не получается — возвращает то, что было в RSS.
+    """
     config = SITES[site_key]
     title = article_data['title']
     link = article_data['link']
@@ -82,6 +98,7 @@ def parse_full_article(article_data, site_key):
         response.encoding = "utf-8"
         soup = BeautifulSoup(response.text, "html.parser")
 
+        # 1. Полный текст
         paragraphs = soup.find_all(config["text_tag"][0], class_=config["text_tag"][1])
         text_parts = []
         for p in paragraphs:
@@ -98,6 +115,7 @@ def parse_full_article(article_data, site_key):
             clean_rss = re.sub(r'<[^>]+>', '', rss_desc)
             text_md = text_to_markdown(clean_rss.strip())
 
+        # 2. Обложка
         img_tag = soup.find(config["cover_tag"][0], class_=config["cover_tag"][1])
         if img_tag:
             src = img_tag.get("src") or img_tag.get("data-src")
@@ -118,6 +136,10 @@ def parse_full_article(article_data, site_key):
     return {"title": title, "text_md": text_md, "cover_url": cover_url}
 
 
+# ═══════════════════════════════════════════════════════════════
+# СОХРАНЕНИЕ В DJANGO
+# ═══════════════════════════════════════════════════════════════
+
 def get_or_create_default_category():
     category, _ = Category.objects.get_or_create(name="Новости", defaults={'slug': 'novosti'})
     return category
@@ -134,7 +156,7 @@ def get_or_create_default_tags(site_name):
 
 def import_news_to_django(site_key="lenta", author_username="sulik"):
     if site_key not in SITES:
-        print(f"❌ Сайт '{site_key}' не поддерживается.")
+        print(f"❌ Сайт '{site_key}' не поддерживается. Доступны: {list(SITES.keys())}")
         return
 
     config = SITES[site_key]
@@ -155,6 +177,10 @@ def import_news_to_django(site_key="lenta", author_username="sulik"):
 
     articles_data = get_news_links_rss(site_key)
     print(f"Найдено новостей в ленте: {len(articles_data)}\n")
+
+    if not articles_data:
+        print("❌ Новостей нет. Возможно, RSS недоступен с этого сервера.")
+        return
 
     created_count = 0
     for i, data in enumerate(articles_data, 1):
@@ -201,3 +227,4 @@ def import_news_to_django(site_key="lenta", author_username="sulik"):
         time.sleep(2)
 
     print(f"\n🎉 Импорт завершён! Создано: {created_count}")
+PYEOF
