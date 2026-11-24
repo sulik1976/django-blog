@@ -1,4 +1,3 @@
-cat > main/importer.py << 'PYEOF'
 import re
 import time
 import uuid
@@ -227,4 +226,3 @@ def import_news_to_django(site_key="lenta", author_username="sulik"):
         time.sleep(2)
 
     print(f"\n🎉 Импорт завершён! Создано: {created_count}")
-PYEOF
