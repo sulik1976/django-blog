@@ -3,6 +3,7 @@ import time
 import uuid
 import feedparser
 import requests
+from bs4 import BeautifulSoup
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from .models import Post, Category, Tag
@@ -15,18 +16,29 @@ HEADERS = {
 }
 
 # ═══════════════════════════════════════════════════════════════
-# НАСТРОЙКИ RSS-ЛЕНТ
+# НАСТРОЙКИ САЙТОВ (RSS для ссылок + HTML для контента)
 # ═══════════════════════════════════════════════════════════════
 SITES = {
     "lenta": {
         "name": "Lenta.ru",
-        "rss_url": "https://lenta.ru/rss",  # Основная лента
+        "rss_url": "https://lenta.ru/rss",
+        "title_tag": ("h1", "topic-body__titles"),
+        "text_tag": ("p", "topic-body__content-text"),
+        "cover_tag": ("img", "picture__image"),
     },
     "rbc": {
         "name": "РБК",
         "rss_url": "http://static.feed.rbc.ru/rbc/internal/rss.rbc.ru/rbc.ru/mainnews.rss",
+        "title_tag": ("h1", "article-entry-title"),
+        "text_tag": ("p", "paragraph"),
+        "cover_tag": ("img", "picture-image"),
     }
 }
+
+PHOTO_CAPTION_PATTERNS = [r'^Фото:', r'^Иллюстрация:', r'^Изображение:', r'^Picture:']
+
+def is_photo_caption(text):
+    return any(re.match(p, text.strip(), re.IGNORECASE) for p in PHOTO_CAPTION_PATTERNS)
 
 def get_news_links_rss(site_key):
     """Получает список новостей из RSS-ленты."""
@@ -38,26 +50,67 @@ def get_news_links_rss(site_key):
         articles.append({
             "title": entry.get("title", "Без заголовка"),
             "link": entry.get("link", ""),
-            "description": entry.get("description", ""),
+            "rss_description": entry.get("description", ""),
         })
     return articles
 
-def parse_article_rss(article_data, site_key):
-    """Обрабатывает одну статью из RSS."""
+def parse_full_article(article_data, site_key):
+    """
+    Пытается загрузить полную статью по ссылке.
+    Если не получается — возвращает то, что было в RSS.
+    """
+    config = SITES[site_key]
     title = article_data['title']
-    raw_text = article_data['description']
-    
-    # Очищаем текст от HTML-тегов
-    clean_text = re.sub(r'<[^>]+>', '', raw_text)
-    clean_text = re.sub(r'\s+', ' ', clean_text).strip()
-    
-    # Конвертируем в Markdown
-    text_md = text_to_markdown(clean_text) if clean_text else ""
-    
-    # В простом RSS обложек обычно нет, оставляем пустой
+    link = article_data['link']
+    rss_desc = article_data['rss_description']
+
+    text_md = ""
     cover_url = ""
     
-    return {"title": title, "text_md": text_md, "cover_url": cover_url, "link": article_data['link']}
+    # Пытаемся загрузить HTML статьи
+    try:
+        response = requests.get(link, headers=HEADERS, timeout=10)
+        response.raise_for_status()
+        response.encoding = "utf-8"
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # 1. Пытаемся достать полный текст
+        paragraphs = soup.find_all(config["text_tag"][0], class_=config["text_tag"][1])
+        text_parts = []
+        for p in paragraphs:
+            txt = p.get_text(separator=" ", strip=True)
+            if txt and not is_photo_caption(txt):
+                text_parts.append(txt)
+
+        full_text = "\n\n".join(text_parts)
+        full_text = re.sub(r'[ \t]+', ' ', full_text)
+
+        if full_text:
+            text_md = text_to_markdown(full_text)
+        else:
+            # Если HTML пустой, берем описание из RSS
+            clean_rss = re.sub(r'<[^>]+>', '', rss_desc)
+            text_md = text_to_markdown(clean_rss.strip())
+
+        # 2. Пытаемся достать обложку
+        img_tag = soup.find(config["cover_tag"][0], class_=config["cover_tag"][1])
+        if img_tag:
+            src = img_tag.get("src") or img_tag.get("data-src")
+            if src:
+                cover_url = requests.compat.urljoin(link, src)
+        else:
+            og_img = soup.find("meta", property="og:image")
+            if og_img and og_img.get("content"):
+                cover_url = og_img["content"]
+
+        print("  📄 Полный текст и обложка загружены из HTML.")
+
+    except Exception as e:
+        print(f"  ⚠️ HTML недоступен ({e}). Используем RSS.")
+        clean_rss = re.sub(r'<[^>]+>', '', rss_desc)
+        text_md = text_to_markdown(clean_rss.strip())
+
+    return {"title": title, "text_md": text_md, "cover_url": cover_url}
 
 # ═══════════════════════════════════════════════════════════════
 # СОХРАНЕНИЕ В DJANGO
@@ -92,7 +145,7 @@ def import_news_to_django(site_key="lenta", author_username="sulik"):
     default_category = get_or_create_default_category()
     default_tags = get_or_create_default_tags(config["name"])
     
-    print(f"🌐 Источник (RSS): {config['name']}")
+    print(f"🌐 Источник: {config['name']}")
     print(f"📂 Категория: {default_category.name}")
     print(f"🏷️  Теги: {', '.join(t.name for t in default_tags)}\n")
 
@@ -103,23 +156,25 @@ def import_news_to_django(site_key="lenta", author_username="sulik"):
     for i, data in enumerate(articles_data, 1):
         print(f"[{i}/{len(articles_data)}] {data['title']}")
         
-        article = parse_article_rss(data, site_key)
+        article = parse_full_article(data, site_key)
 
-        # Проверка на дубликат по заголовку
         if Post.objects.filter(title=article['title']).exists():
             print("  ⏩ Уже есть в базе.")
             continue
 
+        # Обрезаем текст для excerpt
+        excerpt_text = re.sub(r'[#*>`_\[\]]', '', article['text_md'])[:200].strip()
+
         post = Post(
             title=article['title'],
             content=article['text_md'],
-            excerpt=article['text_md'][:200] + "..." if article['text_md'] else "",
+            excerpt=excerpt_text + "..." if excerpt_text else "",
             author=author,
             status='draft',
             category=default_category,
         )
 
-        # Скачивание обложки (в RSS её обычно нет, но код оставлен для будущего)
+        # Скачивание обложки
         if article['cover_url']:
             try:
                 img_response = requests.get(article['cover_url'], headers=HEADERS, timeout=10)
@@ -140,6 +195,6 @@ def import_news_to_django(site_key="lenta", author_username="sulik"):
         except Exception as e:
             print(f"  ❌ Ошибка БД: {e}")
 
-        time.sleep(1)
+        time.sleep(2) # Пауза для вежливости
 
     print(f"\n🎉 Импорт завершён! Создано: {created_count}")
