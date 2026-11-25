@@ -61,7 +61,8 @@ SITES = {
         "rss_url": "https://www.gazeta.ru/export/rss/first.xml",
         "title_tag": ("h1", "exp-extra-title"),
         "text_tag": ("div", "clr"),
-        "cover_tag": ("img", "article__image"),
+        # Отключаем поиск по классу, будем использовать og:image
+        "cover_tag": (None, None),
     },
     "rg": {
         "name": "Российская газета",
@@ -82,7 +83,8 @@ SITES = {
         "rss_url": "https://tass.ru/rss/v2.xml",
         "title_tag": ("h1", "news-header__title"),
         "text_tag": ("div", "news-content__text"),
-        "cover_tag": ("img", "news-content__image"),
+        # Ищем контейнер, внутри которого лежит картинка
+        "cover_tag": ("div", "news-content__image"),
     },
 }
 
@@ -152,12 +154,27 @@ def parse_full_article(article_data, site_key):
             text_md = text_to_markdown(clean_rss.strip())
 
         # 2. Обложка
-        img_tag = soup.find(config["cover_tag"][0], class_=config["cover_tag"][1])
-        if img_tag:
-            src = img_tag.get("src") or img_tag.get("data-src")
-            if src:
-                cover_url = requests.compat.urljoin(link, src)
-        else:
+        cover_url = ""
+        tag_name, class_name = config["cover_tag"]
+
+        if tag_name and class_name:
+            cover_element = soup.find(tag_name, class_=class_name)
+            if cover_element:
+                # Если нашли контейнер (div), ищем картинку внутри
+                if cover_element.name == "div":
+                    img_tag = cover_element.find("img")
+                    if img_tag:
+                        src = img_tag.get("src") or img_tag.get("data-src")
+                        if src:
+                            cover_url = requests.compat.urljoin(link, src)
+                # Если нашли сразу картинку (img)
+                elif cover_element.name == "img":
+                    src = cover_element.get("src") or cover_element.get("data-src")
+                    if src:
+                        cover_url = requests.compat.urljoin(link, src)
+
+        # Если по селектору не нашли — пробуем og:image
+        if not cover_url:
             og_img = soup.find("meta", property="og:image")
             if og_img and og_img.get("content"):
                 cover_url = og_img["content"]
