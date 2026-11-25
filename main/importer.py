@@ -12,7 +12,9 @@ from .text_to_markdown import text_to_markdown
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                   "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/120.0 Safari/537.36"
+                  "Chrome/120.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -46,6 +48,41 @@ SITES = {
         "title_tag": ("h1", "article_title"),
         "text_tag": ("div", "article_text"),
         "cover_tag": ("img", "article_image"),
+    },
+    "kommersant": {
+        "name": "Коммерсантъ",
+        "rss_url": "https://www.kommersant.ru/rss/news.xml",
+        "title_tag": ("h1", "article__title"),
+        "text_tag": ("div", "article__text"),
+        "cover_tag": ("img", "article__image"),
+    },
+    "gazeta": {
+        "name": "Газета.Ru",
+        "rss_url": "https://www.gazeta.ru/export/rss/first.xml",
+        "title_tag": ("h1", "exp-extra-title"),
+        "text_tag": ("div", "clr"),
+        "cover_tag": ("img", "article__image"),
+    },
+    "rg": {
+        "name": "Российская газета",
+        "rss_url": "https://rg.ru/xml/index.xml",
+        "title_tag": ("h1", "article__title"),
+        "text_tag": ("div", "article__text"),
+        "cover_tag": ("img", "article__image"),
+    },
+    "ria": {
+        "name": "РИА Новости",
+        "rss_url": "https://ria.ru/export/rss2/archive/index.xml",
+        "title_tag": ("h1", "article__title"),
+        "text_tag": ("div", "article__text"),
+        "cover_tag": ("img", "article__image"),
+    },
+    "tass": {
+        "name": "ТАСС",
+        "rss_url": "https://tass.ru/rss/v2.xml",
+        "title_tag": ("h1", "news-header__title"),
+        "text_tag": ("div", "news-content__text"),
+        "cover_tag": ("img", "news-content__image"),
     },
 }
 
