@@ -12,4 +12,5 @@ urlpatterns = [
     path('post/<str:slug>/delete/', views.PostDeleteView.as_view(), name='post_delete'),
     path('category/<str:slug>/', views.CategoryDetailView.as_view(), name='category_detail'),
     path('tag/<str:slug>/', views.TagDetailView.as_view(), name='tag_detail'),
+    path('admin-import-news/', views.admin_import_news, name='admin_import_news'),
 ]

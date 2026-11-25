@@ -13,6 +13,9 @@ from django.views.generic.edit import FormMixin
 
 from .forms import CommentForm, SignUpForm
 from .models import Post, Category, Tag
+from django.contrib.admin.views.decorators import staff_member_required
+
+from .importer import import_news_to_django, SITES
 
 
 class PostListView(ListView):
@@ -183,3 +186,27 @@ class LogoutView(View):
 
     def get(self, request):
         return self.post(request)
+
+
+@staff_member_required
+def admin_import_news(request):
+    """Запускает парсинг новостей из выбранного источника (только для стаффа)."""
+    if request.method != "POST":
+        return redirect('/admin/main/post/')
+
+    site = request.POST.get('site', 'lenta')
+
+    if site not in SITES:
+        messages.error(request, f'Сайт "{site}" не поддерживается.')
+        return redirect('/admin/main/post/')
+
+    try:
+        import_news_to_django(site_key=site, author_username=request.user.username)
+        messages.success(
+            request,
+            f'✅ Импорт с {SITES[site]["name"]} завершён. Проверьте черновики ниже.'
+        )
+    except Exception as e:
+        messages.error(request, f'❌ Ошибка импорта: {e}')
+
+    return redirect('/admin/main/post/?status__exact=draft')    

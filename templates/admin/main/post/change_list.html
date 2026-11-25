@@ -1,0 +1,53 @@
+{% extends "admin/change_list.html" %}
+
+{% block object-tools-items %}
+    {{ block.super }}
+
+    <li style="display: inline-block; margin-left: 6px; height: auto; float: none;">
+        <form method="post" action="{% url 'admin_import_news' %}" style="display: inline; margin: 0;">
+            {% csrf_token %}
+            <input type="hidden" name="site" value="lenta">
+            <button type="submit" class="button"
+                    style="background: #c62828; color: white; border: none; padding: 8px 14px; border-radius: 4px; cursor: pointer; font-weight: 500; height: auto; line-height: 1.2;"
+                    title="Спарсить 5 свежих новостей с Lenta.ru">
+                📰 Импорт: Lenta.ru
+            </button>
+        </form>
+    </li>
+
+    <li style="display: inline-block; margin-left: 6px; height: auto; float: none;">
+        <form method="post" action="{% url 'admin_import_news' %}" style="display: inline; margin: 0;">
+            {% csrf_token %}
+            <input type="hidden" name="site" value="rt">
+            <button type="submit" class="button"
+                    style="background: #e65100; color: white; border: none; padding: 8px 14px; border-radius: 4px; cursor: pointer; font-weight: 500; height: auto; line-height: 1.2;"
+                    title="Спарсить 5 свежих новостей с RT">
+                📰 Импорт: RT
+            </button>
+        </form>
+    </li>
+
+    <li style="display: inline-block; margin-left: 6px; height: auto; float: none;">
+        <form method="post" action="{% url 'admin_import_news' %}" style="display: inline; margin: 0;">
+            {% csrf_token %}
+            <input type="hidden" name="site" value="iz">
+            <button type="submit" class="button"
+                    style="background: #1565c0; color: white; border: none; padding: 8px 14px; border-radius: 4px; cursor: pointer; font-weight: 500; height: auto; line-height: 1.2;"
+                    title="Спарсить 5 свежих новостей с Известий">
+                📰 Импорт: Известия
+            </button>
+        </form>
+    </li>
+
+    <li style="display: inline-block; margin-left: 6px; height: auto; float: none;">
+        <form method="post" action="{% url 'admin_import_news' %}" style="display: inline; margin: 0;">
+            {% csrf_token %}
+            <input type="hidden" name="site" value="rbc">
+            <button type="submit" class="button"
+                    style="background: #6a1b9a; color: white; border: none; padding: 8px 14px; border-radius: 4px; cursor: pointer; font-weight: 500; height: auto; line-height: 1.2;"
+                    title="Спарсить 5 свежих новостей с РБК">
+                📰 Импорт: РБК
+            </button>
+        </form>
+    </li>
+{% endblock %}
