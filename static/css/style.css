@@ -12,6 +12,59 @@ body {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   НАВБАР (кастомный цвет)
+   ───────────────────────────────────────────────────────────── */
+
+.navbar-custom {
+    background: linear-gradient(90deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.navbar-custom .navbar-brand {
+    color: #e94560 !important;
+    font-weight: 700;
+}
+
+.navbar-custom .nav-link {
+    color: rgba(255, 255, 255, 0.85) !important;
+    transition: color 0.15s ease;
+}
+
+.navbar-custom .nav-link:hover {
+    color: #e94560 !important;
+}
+
+.navbar-custom .navbar-text {
+    color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.navbar-custom .navbar-toggler {
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   ФУТЕР (кастомный цвет)
+   ───────────────────────────────────────────────────────────── */
+
+.footer-custom {
+    background: linear-gradient(90deg, #0f3460 0%, #16213e 50%, #1a1a2e 100%) !important;
+    color: rgba(255, 255, 255, 0.85) !important;
+    border-top: 3px solid #e94560;
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.footer-custom a {
+    color: #e94560;
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+
+.footer-custom a:hover {
+    color: #fff;
+    text-decoration: underline;
+}
+
+/* ─────────────────────────────────────────────────────────────
    КАРТОЧКИ СТАТЕЙ (список)
    ───────────────────────────────────────────────────────────── */
 
@@ -24,12 +77,29 @@ body {
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
 }
 
-.post-card .card-title a {
+/* Ссылка-заголовок карточки: мягкий синий, без подчёркивания */
+.post-card .card-title a,
+.post-card h2.card-title a,
+.post-card h2 a {
+    color: #3a6ea5 !important;
+    text-decoration: none !important;
+    font-weight: 600;
     transition: color 0.15s ease;
 }
 
-.post-card .card-title a:hover {
-    color: #0d6efd !important;
+.post-card .card-title a:hover,
+.post-card h2.card-title a:hover {
+    color: #2c5f9e !important;
+    text-decoration: underline !important;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+}
+
+/* Перебиваем Bootstrap text-dark, если он остался в шаблоне */
+.post-card a.text-dark,
+.post-card .card-title a.text-dark,
+.post-card h2 a.text-dark {
+    color: #3a6ea5 !important;
 }
 
 .post-cover {
@@ -247,7 +317,7 @@ body {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   АДАПТИВНОСТЬ
+   АДАПТИВНОСТЬ / МОБИЛЬНАЯ ВЕРСИЯ
    ───────────────────────────────────────────────────────────── */
 
 @media (max-width: 768px) {
@@ -262,88 +332,32 @@ body {
     .post-cover {
         height: 150px;
     }
-}
 
-/* ─────────────────────────────────────────────────────────────
-   ССЫЛКИ В КАРТОЧКАХ СТАТЕЙ (чтобы было видно, что это ссылка)
-   ───────────────────────────────────────────────────────────── */
-
-.post-card .card-title a {
-    color: #0d6efd !important;
-    text-decoration: none;
-    transition: color 0.15s ease;
-}
-
-.post-card .card-title a:hover {
-    color: #0a58ca !important;
-    text-decoration: underline;
-}
-
-/* Ссылки-бейджи (категории, теги) в карточках */
-.post-card .badge {
-    color: inherit;
-}
-
-.post-card a.badge.bg-primary:hover,
-.post-card a.badge.bg-light:hover {
-    text-decoration: none;
-    opacity: 0.85;
-}
-
-/* ─────────────────────────────────────────────────────────────
-   ССЫЛКИ НА КАРТОЧКАХ СТАТЕЙ (гарантированно видны везде)
-   ───────────────────────────────────────────────────────────── */
-
-/* Обычная ссылка в заголовке карточки */
-.post-card .card-title a,
-.post-card h2.card-title a,
-.post-card .card-body a.card-link,
-article.post-card h2 a {
-    color: #0d6efd !important;
-    text-decoration: none !important;
-    font-weight: 600;
-    transition: color 0.15s ease, text-decoration 0.15s ease;
-}
-
-.post-card .card-title a:hover,
-.post-card h2.card-title a:hover {
-    color: #0a58ca !important;
-    text-decoration: underline !important;
-}
-
-/* ─────────────────────────────────────────────────────────────
-   МОБИЛЬНАЯ ВЕРСИЯ — усиленная видимость ссылок
-   ───────────────────────────────────────────────────────────── */
-@media (max-width: 768px) {
-    /* Ссылка-заголовок карточки: делаем цветным + подчёркнутым */
+    /* Ссылка-заголовок карточки: мягкий синий, БЕЗ подчёркивания */
     .post-card .card-title a,
     .post-card h2.card-title a,
     .post-card h2 a {
-        color: #0d6efd !important;
-        text-decoration: underline !important;
-        text-decoration-thickness: 1px;
-        text-underline-offset: 3px;
+        color: #3a6ea5 !important;
+        text-decoration: none !important;
         font-weight: 600;
     }
 
-    /* Убираем возможный тёмный цвет от Bootstrap text-dark */
+    /* Перебиваем возможный тёмный цвет */
     .post-card .card-title a.text-dark,
     .post-card h2 a.text-dark,
     .post-card a.text-dark {
-        color: #0d6efd !important;
+        color: #3a6ea5 !important;
     }
 
-    /* Ссылки в тексте статьи (Markdown) — тоже заметные */
+    /* Ссылки в тексте статьи (Markdown) — без подчёркивания,
+       но с мягким цветом и небольшой подсветкой при нажатии */
     .post-content a {
-        color: #0d6efd !important;
-        text-decoration: underline !important;
-        text-decoration-thickness: 1px;
-        text-underline-offset: 3px;
+        color: #3a6ea5 !important;
+        text-decoration: none !important;
+        border-bottom: 1px solid rgba(58, 110, 165, 0.3);
     }
 
-    /* Бейджи (категории, теги) — чуть контрастнее */
-    .post-card a.badge.bg-light {
-        color: #212529 !important;
-        border: 1px solid #adb5bd !important;
+    .post-content a:active {
+        background-color: rgba(58, 110, 165, 0.1);
     }
 }
