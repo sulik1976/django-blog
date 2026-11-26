@@ -263,3 +263,87 @@ body {
         height: 150px;
     }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   ССЫЛКИ В КАРТОЧКАХ СТАТЕЙ (чтобы было видно, что это ссылка)
+   ───────────────────────────────────────────────────────────── */
+
+.post-card .card-title a {
+    color: #0d6efd !important;
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+
+.post-card .card-title a:hover {
+    color: #0a58ca !important;
+    text-decoration: underline;
+}
+
+/* Ссылки-бейджи (категории, теги) в карточках */
+.post-card .badge {
+    color: inherit;
+}
+
+.post-card a.badge.bg-primary:hover,
+.post-card a.badge.bg-light:hover {
+    text-decoration: none;
+    opacity: 0.85;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   ССЫЛКИ НА КАРТОЧКАХ СТАТЕЙ (гарантированно видны везде)
+   ───────────────────────────────────────────────────────────── */
+
+/* Обычная ссылка в заголовке карточки */
+.post-card .card-title a,
+.post-card h2.card-title a,
+.post-card .card-body a.card-link,
+article.post-card h2 a {
+    color: #0d6efd !important;
+    text-decoration: none !important;
+    font-weight: 600;
+    transition: color 0.15s ease, text-decoration 0.15s ease;
+}
+
+.post-card .card-title a:hover,
+.post-card h2.card-title a:hover {
+    color: #0a58ca !important;
+    text-decoration: underline !important;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   МОБИЛЬНАЯ ВЕРСИЯ — усиленная видимость ссылок
+   ───────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    /* Ссылка-заголовок карточки: делаем цветным + подчёркнутым */
+    .post-card .card-title a,
+    .post-card h2.card-title a,
+    .post-card h2 a {
+        color: #0d6efd !important;
+        text-decoration: underline !important;
+        text-decoration-thickness: 1px;
+        text-underline-offset: 3px;
+        font-weight: 600;
+    }
+
+    /* Убираем возможный тёмный цвет от Bootstrap text-dark */
+    .post-card .card-title a.text-dark,
+    .post-card h2 a.text-dark,
+    .post-card a.text-dark {
+        color: #0d6efd !important;
+    }
+
+    /* Ссылки в тексте статьи (Markdown) — тоже заметные */
+    .post-content a {
+        color: #0d6efd !important;
+        text-decoration: underline !important;
+        text-decoration-thickness: 1px;
+        text-underline-offset: 3px;
+    }
+
+    /* Бейджи (категории, теги) — чуть контрастнее */
+    .post-card a.badge.bg-light {
+        color: #212529 !important;
+        border: 1px solid #adb5bd !important;
+    }
+}
