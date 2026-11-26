@@ -18,77 +18,64 @@ HEADERS = {
 }
 
 # ═══════════════════════════════════════════════════════════════
-# НАСТРОЙКИ САЙТОВ (RSS для ссылок + HTML для контента)
+# ТОЛЬКО РАБОЧИЕ ИСТОЧНИКИ
 # ═══════════════════════════════════════════════════════════════
 SITES = {
     "lenta": {
         "name": "Lenta.ru",
         "rss_url": "https://lenta.ru/rss",
         "title_tag": ("h1", "topic-body__titles"),
-        "text_tag": ("p", "topic-body__content-text"),
+        "text_tags": [("p", "topic-body__content-text")],
         "cover_tag": ("img", "picture__image"),
-    },
-    "rbc": {
-        "name": "РБК",
-        "rss_url": "http://static.feed.rbc.ru/rbc/logical/footer/news.rss",
-        "title_tag": ("h1", "article-entry-title"),
-        "text_tag": ("p", "paragraph"),
-        "cover_tag": ("img", "picture-image"),
     },
     "rt": {
         "name": "RT",
         "rss_url": "https://russian.rt.com/rss",
         "title_tag": ("h1", "article__heading"),
-        "text_tag": ("div", "article__text"),
+        "text_tags": [
+            ("div", "article__text"),
+            ("div", "article__text-paragraph"),
+            ("p", "article__text-paragraph"),
+        ],
         "cover_tag": ("img", "article__cover"),
-    },
-    "iz": {
-        "name": "Известия",
-        "rss_url": "https://iz.ru/xml/rss/all.xml",
-        "title_tag": ("h1", "article_title"),
-        "text_tag": ("div", "article_text"),
-        "cover_tag": ("img", "article_image"),
-    },
-    "kommersant": {
-        "name": "Коммерсантъ",
-        "rss_url": "https://www.kommersant.ru/rss/news.xml",
-        "title_tag": ("h1", "article__title"),
-        "text_tag": ("div", "article__text"),
-        "cover_tag": ("img", "article__image"),
-    },
-    "gazeta": {
-        "name": "Газета.Ru",
-        "rss_url": "https://www.gazeta.ru/export/rss/first.xml",
-        "title_tag": ("h1", "exp-extra-title"),
-        "text_tag": ("div", "clr"),
-        # Отключаем поиск по классу, будем использовать og:image
-        "cover_tag": (None, None),
     },
     "rg": {
         "name": "Российская газета",
         "rss_url": "https://rg.ru/xml/index.xml",
         "title_tag": ("h1", "article__title"),
-        "text_tag": ("div", "article__text"),
+        "text_tags": [
+            ("div", "article__text"),
+            ("div", "text-content"),
+            ("div", "PageTextContent"),
+        ],
         "cover_tag": ("img", "article__image"),
     },
     "ria": {
         "name": "РИА Новости",
         "rss_url": "https://ria.ru/export/rss2/archive/index.xml",
         "title_tag": ("h1", "article__title"),
-        "text_tag": ("div", "article__text"),
+        "text_tags": [
+            ("div", "article__text"),
+            ("div", "article__body"),
+            ("div", "article__block"),
+        ],
         "cover_tag": ("img", "article__image"),
     },
-    "tass": {
-        "name": "ТАСС",
-        "rss_url": "https://tass.ru/rss/v2.xml",
-        "title_tag": ("h1", "news-header__title"),
-        "text_tag": ("div", "news-content__text"),
-        # Ищем контейнер, внутри которого лежит картинка
-        "cover_tag": ("div", "news-content__image"),
+    "iz": {
+        "name": "Известия",
+        "rss_url": "https://iz.ru/xml/rss/all.xml",
+        "title_tag": ("h1", "article_title"),
+        "text_tags": [
+            ("div", "article_text"),
+            ("div", "text-ib"),
+        ],
+        "cover_tag": ("img", "article_image"),
     },
 }
 
-PHOTO_CAPTION_PATTERNS = [r'^Фото:', r'^Иллюстрация:', r'^Изображение:', r'^Picture:']
+PHOTO_CAPTION_PATTERNS = [
+    r'^Фото:', r'^Иллюстрация:', r'^Изображение:', r'^Picture:', r'^Image:',
+]
 
 
 def is_photo_caption(text):
@@ -96,9 +83,7 @@ def is_photo_caption(text):
 
 
 def get_news_links_rss(site_key):
-    """Получает список новостей из RSS-ленты (с таймаутом)."""
     config = SITES[site_key]
-
     try:
         r = requests.get(config["rss_url"], headers=HEADERS, timeout=10)
         r.raise_for_status()
@@ -117,11 +102,80 @@ def get_news_links_rss(site_key):
     return articles
 
 
+def extract_text(soup, config, rss_desc):
+    text_parts = []
+
+    # 1. По селекторам
+    for tag_name, class_name in config.get("text_tags", []):
+        elements = soup.find_all(tag_name, class_=class_name)
+        if not elements:
+            continue
+        for el in elements:
+            if el.name in ("div", "section", "article"):
+                inner_ps = el.find_all("p")
+                if inner_ps:
+                    for p in inner_ps:
+                        txt = p.get_text(separator=" ", strip=True)
+                        if txt and not is_photo_caption(txt) and len(txt) > 15:
+                            text_parts.append(txt)
+                else:
+                    txt = el.get_text(separator=" ", strip=True)
+                    if txt and not is_photo_caption(txt) and len(txt) > 40:
+                        text_parts.append(txt)
+            else:
+                txt = el.get_text(separator=" ", strip=True)
+                if txt and not is_photo_caption(txt) and len(txt) > 15:
+                    text_parts.append(txt)
+        if text_parts:
+            break
+
+    # 2. <article>
+    if not text_parts:
+        article = soup.find("article")
+        if article:
+            for p in article.find_all("p"):
+                txt = p.get_text(separator=" ", strip=True)
+                if txt and not is_photo_caption(txt) and len(txt) > 15:
+                    text_parts.append(txt)
+            if not text_parts:
+                txt = article.get_text(separator=" ", strip=True)
+                if txt and len(txt) > 100:
+                    text_parts.append(txt)
+
+    # 3. Самый большой <div> с <p>
+    if not text_parts:
+        best_div = None
+        best_len = 0
+        for div in soup.find_all("div"):
+            if len(div.find_all("a")) > 10 or len(div.find_all("script")) > 2:
+                continue
+            txt = div.get_text(separator=" ", strip=True)
+            if len(txt) > best_len and len(txt) < 20000:
+                best_len = len(txt)
+                best_div = div
+        if best_div:
+            inner_ps = best_div.find_all("p")
+            if inner_ps:
+                for p in inner_ps:
+                    txt = p.get_text(separator=" ", strip=True)
+                    if txt and not is_photo_caption(txt) and len(txt) > 15:
+                        text_parts.append(txt)
+            if not text_parts:
+                txt = best_div.get_text(separator=" ", strip=True)
+                if txt and len(txt) > 100:
+                    text_parts.append(txt)
+
+    # Дедупликация
+    seen = set()
+    unique = []
+    for t in text_parts:
+        if t not in seen:
+            seen.add(t)
+            unique.append(t)
+    return "\n\n".join(unique)
+
+
 def parse_full_article(article_data, site_key):
-    """
-    Пытается загрузить полную статью по ссылке.
-    Если не получается — возвращает то, что было в RSS.
-    """
     config = SITES[site_key]
     title = article_data['title']
     link = article_data['link']
@@ -136,62 +190,44 @@ def parse_full_article(article_data, site_key):
         response.encoding = "utf-8"
         soup = BeautifulSoup(response.text, "html.parser")
 
-        # 1. Полный текст
-        paragraphs = soup.find_all(config["text_tag"][0], class_=config["text_tag"][1])
-        text_parts = []
-        for p in paragraphs:
-            txt = p.get_text(separator=" ", strip=True)
-            if txt and not is_photo_caption(txt):
-                text_parts.append(txt)
-
-        full_text = "\n\n".join(text_parts)
+        full_text = extract_text(soup, config, rss_desc)
         full_text = re.sub(r'[ \t]+', ' ', full_text)
 
-        if full_text:
+        if full_text and len(full_text) > 50:
             text_md = text_to_markdown(full_text)
         else:
             clean_rss = re.sub(r'<[^>]+>', '', rss_desc)
             text_md = text_to_markdown(clean_rss.strip())
 
-        # 2. Обложка
-        cover_url = ""
         tag_name, class_name = config["cover_tag"]
-
         if tag_name and class_name:
             cover_element = soup.find(tag_name, class_=class_name)
             if cover_element:
-                # Если нашли контейнер (div), ищем картинку внутри
                 if cover_element.name == "div":
                     img_tag = cover_element.find("img")
                     if img_tag:
                         src = img_tag.get("src") or img_tag.get("data-src")
                         if src:
                             cover_url = requests.compat.urljoin(link, src)
-                # Если нашли сразу картинку (img)
                 elif cover_element.name == "img":
                     src = cover_element.get("src") or cover_element.get("data-src")
                     if src:
                         cover_url = requests.compat.urljoin(link, src)
 
-        # Если по селектору не нашли — пробуем og:image
         if not cover_url:
             og_img = soup.find("meta", property="og:image")
             if og_img and og_img.get("content"):
                 cover_url = og_img["content"]
 
-        print("  📄 Полный текст и обложка загружены из HTML.")
+        print(f"  📄 Текст: {len(full_text)} симв., обложка: {'есть' if cover_url else 'нет'}")
 
     except Exception as e:
         print(f"  ⚠️ HTML недоступен ({e}). Используем RSS.")
         clean_rss = re.sub(r'<[^>]+>', '', rss_desc)
         text_md = text_to_markdown(clean_rss.strip())
 
-    return {"title": title, "text_md": text_md, "cover_url": cover_url}
+    return {"title": title, "text_md": text_md, "cover_url": cover_url, "source_url": link}
 
-
-# ═══════════════════════════════════════════════════════════════
-# СОХРАНЕНИЕ В DJANGO
-# ═══════════════════════════════════════════════════════════════
 
 def get_or_create_default_category():
     category, _ = Category.objects.get_or_create(name="Новости", defaults={'slug': 'novosti'})
