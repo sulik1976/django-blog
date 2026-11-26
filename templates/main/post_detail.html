@@ -4,6 +4,7 @@
 
 {% block content %}
 <article>
+    {# Вверху — явный переход на главную #}
     <div class="mb-4">
         <a href="{% url 'post_list' %}" class="text-decoration-none">← Все статьи</a>
     </div>
@@ -85,7 +86,33 @@
 
 <!-- Навигация в конце статьи -->
 <div class="mt-5 pt-4 border-top d-flex justify-content-between">
-    <a href="{% url 'post_list' %}" class="btn btn-outline-secondary">← Все статьи</a>
+    {# ← Назад: если пришёл с нашего сайта — history.back(), иначе — на главную #}
+    <a href="{% url 'post_list' %}"
+       id="back-button"
+       class="btn btn-outline-secondary">
+        ← Назад
+    </a>
     <a href="#" id="back-to-top" class="btn btn-outline-secondary">↑ Наверх</a>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const backBtn = document.getElementById('back-button');
+    if (!backBtn) return;
+
+    const referrer = document.referrer;
+    const ourHost = window.location.host;
+
+    // Если referrer есть и это наш сайт — возвращаем на предыдущую страницу
+    if (referrer && referrer.indexOf(ourHost) !== -1) {
+        backBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            window.history.back();
+        });
+    }
+    // Иначе — работает стандартный href (на главную)
+});
+</script>
 {% endblock %}
