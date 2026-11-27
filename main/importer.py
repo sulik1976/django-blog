@@ -105,7 +105,6 @@ def get_news_links_rss(site_key):
 def extract_text(soup, config, rss_desc):
     text_parts = []
 
-    # 1. По селекторам
     for tag_name, class_name in config.get("text_tags", []):
         elements = soup.find_all(tag_name, class_=class_name)
         if not elements:
@@ -129,7 +128,6 @@ def extract_text(soup, config, rss_desc):
         if text_parts:
             break
 
-    # 2. <article>
     if not text_parts:
         article = soup.find("article")
         if article:
@@ -142,7 +140,6 @@ def extract_text(soup, config, rss_desc):
                 if txt and len(txt) > 100:
                     text_parts.append(txt)
 
-    # 3. Самый большой <div> с <p>
     if not text_parts:
         best_div = None
         best_len = 0
@@ -165,7 +162,6 @@ def extract_text(soup, config, rss_desc):
                 if txt and len(txt) > 100:
                     text_parts.append(txt)
 
-    # Дедупликация
     seen = set()
     unique = []
     for t in text_parts:
@@ -173,6 +169,62 @@ def extract_text(soup, config, rss_desc):
             seen.add(t)
             unique.append(t)
     return "\n\n".join(unique)
+
+
+def find_cover_image(soup, config, link):
+    """
+    Умный поиск обложки:
+    1. Внутри контейнера с текстом (самый чистый вариант)
+    2. itemprop="image"
+    3. img с классом article__image
+    4. og:image (fallback)
+    """
+    cover_url = ""
+
+    # 1. Внутри контейнера с текстом
+    for tag_name, class_name in config.get("text_tags", []):
+        text_container = soup.find(tag_name, class_=class_name)
+        if text_container:
+            img = text_container.find("img")
+            if img:
+                src = img.get("src") or img.get("data-src")
+                if src:
+                    # Пропускаем мелкие иконки и заглушки
+                    if not any(x in src.lower() for x in ["icon", "logo", "placeholder", "blank"]):
+                        cover_url = requests.compat.urljoin(link, src)
+                        if cover_url:
+                            return cover_url
+
+    # 2. itemprop="image"
+    if not cover_url:
+        img = soup.find("img", attrs={"itemprop": "image"})
+        if img:
+            src = img.get("src") or img.get("data-src")
+            if src:
+                cover_url = requests.compat.urljoin(link, src)
+                if cover_url:
+                    return cover_url
+
+    # 3. img.article__image
+    if not cover_url:
+        img = soup.find("img", class_="article__image")
+        if img:
+            src = img.get("src") or img.get("data-src")
+            if src:
+                cover_url = requests.compat.urljoin(link, src)
+                if cover_url:
+                    return cover_url
+
+    # 4. og:image (fallback)
+    if not cover_url:
+        og_img = soup.find("meta", property="og:image")
+        if og_img and og_img.get("content"):
+            # Проверяем, не заглушка ли это
+            content = og_img["content"].lower()
+            if not any(x in content for x in ["placeholder", "blank", "stub", "default"]):
+                cover_url = og_img["content"]
+
+    return cover_url
 
 
 def parse_full_article(article_data, site_key):
@@ -199,25 +251,7 @@ def parse_full_article(article_data, site_key):
             clean_rss = re.sub(r'<[^>]+>', '', rss_desc)
             text_md = text_to_markdown(clean_rss.strip())
 
-        tag_name, class_name = config["cover_tag"]
-        if tag_name and class_name:
-            cover_element = soup.find(tag_name, class_=class_name)
-            if cover_element:
-                if cover_element.name == "div":
-                    img_tag = cover_element.find("img")
-                    if img_tag:
-                        src = img_tag.get("src") or img_tag.get("data-src")
-                        if src:
-                            cover_url = requests.compat.urljoin(link, src)
-                elif cover_element.name == "img":
-                    src = cover_element.get("src") or cover_element.get("data-src")
-                    if src:
-                        cover_url = requests.compat.urljoin(link, src)
-
-        if not cover_url:
-            og_img = soup.find("meta", property="og:image")
-            if og_img and og_img.get("content"):
-                cover_url = og_img["content"]
+        cover_url = find_cover_image(soup, config, link)
 
         print(f"  📄 Текст: {len(full_text)} симв., обложка: {'есть' if cover_url else 'нет'}")
 
