@@ -18,7 +18,7 @@ HEADERS = {
 }
 
 # ═══════════════════════════════════════════════════════════════
-# ТОЛЬКО РАБОЧИЕ ИСТОЧНИКИ
+# РАБОЧИЕ ИСТОЧНИКИ
 # ═══════════════════════════════════════════════════════════════
 SITES = {
     "lenta": {
@@ -26,7 +26,6 @@ SITES = {
         "rss_url": "https://lenta.ru/rss",
         "title_tag": ("h1", "topic-body__titles"),
         "text_tags": [("p", "topic-body__content-text")],
-        "cover_tag": ("img", "picture__image"),
     },
     "rt": {
         "name": "RT",
@@ -37,7 +36,6 @@ SITES = {
             ("div", "article__text-paragraph"),
             ("p", "article__text-paragraph"),
         ],
-        "cover_tag": ("img", "article__cover"),
     },
     "rg": {
         "name": "Российская газета",
@@ -48,7 +46,6 @@ SITES = {
             ("div", "text-content"),
             ("div", "PageTextContent"),
         ],
-        "cover_tag": ("img", "article__image"),
     },
     "ria": {
         "name": "РИА Новости",
@@ -59,7 +56,6 @@ SITES = {
             ("div", "article__body"),
             ("div", "article__block"),
         ],
-        "cover_tag": ("img", "article__image"),
     },
     "iz": {
         "name": "Известия",
@@ -69,7 +65,6 @@ SITES = {
             ("div", "article_text"),
             ("div", "text-ib"),
         ],
-        "cover_tag": ("img", "article_image"),
     },
 }
 
@@ -81,6 +76,93 @@ PHOTO_CAPTION_PATTERNS = [
 def is_photo_caption(text):
     return any(re.match(p, text.strip(), re.IGNORECASE) for p in PHOTO_CAPTION_PATTERNS)
 
+
+# ═══════════════════════════════════════════════════════════════
+# УТИЛИТЫ ДЛЯ ОБЛОЖЕК
+# ═══════════════════════════════════════════════════════════════
+
+def extract_img_src(img, base_url):
+    """Достаёт URL из src, data-src или srcset (наибольшее разрешение)."""
+    src = img.get("data-src") or img.get("data-original") or img.get("src")
+    if src and not src.startswith("data:"):
+        return requests.compat.urljoin(base_url, src)
+
+    srcset = img.get("srcset") or img.get("data-srcset")
+    if srcset:
+        candidates = []
+        for part in srcset.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            url_part = part.split()[0]
+            width = 0
+            for token in part.split()[1:]:
+                if token.endswith("w"):
+                    try:
+                        width = int(token[:-1])
+                    except ValueError:
+                        pass
+            candidates.append((width, url_part))
+        if candidates:
+            candidates.sort(reverse=True, key=lambda x: x[0])
+            return requests.compat.urljoin(base_url, candidates[0][1])
+    return ""
+
+
+def is_stub_image(url):
+    """Проверяет, является ли URL заглушкой или иконкой."""
+    low = url.lower()
+    bad = ["placeholder", "stub", "blank", "default", "logo", "icon",
+           "favicon", "apple-touch", "sprite", "1x1", "pixel"]
+    return any(w in low for w in bad)
+
+
+def find_cover_image(soup, config, link):
+    """Умный поиск чистой обложки (без заглушек и текста)."""
+    # 1. Внутри контейнера с текстом
+    for tag_name, class_name in config.get("text_tags", []):
+        container = soup.find(tag_name, class_=class_name)
+        if not container:
+            continue
+        for img in container.find_all("img"):
+            src = extract_img_src(img, link)
+            if src and not is_stub_image(src):
+                return src
+
+    # 2. itemprop="image"
+    img = soup.find("img", attrs={"itemprop": "image"})
+    if img:
+        src = extract_img_src(img, link)
+        if src and not is_stub_image(src):
+            return src
+
+    # 3. img с классами обложек
+    for cls in ("article__image", "article-image", "picture__image", "article_image"):
+        img = soup.find("img", class_=cls)
+        if img:
+            src = extract_img_src(img, link)
+            if src and not is_stub_image(src):
+                return src
+
+    # 4. Любая картинка внутри <article>
+    article = soup.find("article")
+    if article:
+        for img in article.find_all("img"):
+            src = extract_img_src(img, link)
+            if src and not is_stub_image(src):
+                return src
+
+    # 5. og:image — только если не заглушка
+    og = soup.find("meta", property="og:image")
+    if og and og.get("content") and not is_stub_image(og["content"]):
+        return og["content"]
+
+    return ""
+
+
+# ═══════════════════════════════════════════════════════════════
+# RSS
+# ═══════════════════════════════════════════════════════════════
 
 def get_news_links_rss(site_key):
     config = SITES[site_key]
@@ -101,6 +183,10 @@ def get_news_links_rss(site_key):
         })
     return articles
 
+
+# ═══════════════════════════════════════════════════════════════
+# ИЗВЛЕЧЕНИЕ ТЕКСТА
+# ═══════════════════════════════════════════════════════════════
 
 def extract_text(soup, config, rss_desc):
     text_parts = []
@@ -171,61 +257,9 @@ def extract_text(soup, config, rss_desc):
     return "\n\n".join(unique)
 
 
-def find_cover_image(soup, config, link):
-    """
-    Умный поиск обложки:
-    1. Внутри контейнера с текстом (самый чистый вариант)
-    2. itemprop="image"
-    3. img с классом article__image
-    4. og:image (fallback)
-    """
-    cover_url = ""
-
-    # 1. Внутри контейнера с текстом
-    for tag_name, class_name in config.get("text_tags", []):
-        text_container = soup.find(tag_name, class_=class_name)
-        if text_container:
-            img = text_container.find("img")
-            if img:
-                src = img.get("src") or img.get("data-src")
-                if src:
-                    # Пропускаем мелкие иконки и заглушки
-                    if not any(x in src.lower() for x in ["icon", "logo", "placeholder", "blank"]):
-                        cover_url = requests.compat.urljoin(link, src)
-                        if cover_url:
-                            return cover_url
-
-    # 2. itemprop="image"
-    if not cover_url:
-        img = soup.find("img", attrs={"itemprop": "image"})
-        if img:
-            src = img.get("src") or img.get("data-src")
-            if src:
-                cover_url = requests.compat.urljoin(link, src)
-                if cover_url:
-                    return cover_url
-
-    # 3. img.article__image
-    if not cover_url:
-        img = soup.find("img", class_="article__image")
-        if img:
-            src = img.get("src") or img.get("data-src")
-            if src:
-                cover_url = requests.compat.urljoin(link, src)
-                if cover_url:
-                    return cover_url
-
-    # 4. og:image (fallback)
-    if not cover_url:
-        og_img = soup.find("meta", property="og:image")
-        if og_img and og_img.get("content"):
-            # Проверяем, не заглушка ли это
-            content = og_img["content"].lower()
-            if not any(x in content for x in ["placeholder", "blank", "stub", "default"]):
-                cover_url = og_img["content"]
-
-    return cover_url
-
+# ═══════════════════════════════════════════════════════════════
+# ПАРСИНГ ОДНОЙ СТАТЬИ
+# ═══════════════════════════════════════════════════════════════
 
 def parse_full_article(article_data, site_key):
     config = SITES[site_key]
@@ -262,6 +296,10 @@ def parse_full_article(article_data, site_key):
 
     return {"title": title, "text_md": text_md, "cover_url": cover_url, "source_url": link}
 
+
+# ═══════════════════════════════════════════════════════════════
+# СОХРАНЕНИЕ В DJANGO
+# ═══════════════════════════════════════════════════════════════
 
 def get_or_create_default_category():
     category, _ = Category.objects.get_or_create(name="Новости", defaults={'slug': 'novosti'})
