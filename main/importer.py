@@ -77,6 +77,7 @@ PHOTO_CAPTION_PATTERNS = [
 STUB_IMAGE_PATTERNS = [
     r'placeholder', r'stub', r'blank', r'default', r'logo',
     r'icon', r'favicon', r'sprite', r'1x1', r'pixel',
+    r'share', r'social', r'og-image', r'no-image', r'noimage',
 ]
 
 
@@ -86,6 +87,8 @@ def is_photo_caption(text):
 
 def is_stub_image(url):
     """Проверяет, является ли URL заглушкой или иконкой."""
+    if not url:
+        return True
     low = url.lower()
     return any(re.search(p, low) for p in STUB_IMAGE_PATTERNS)
 
@@ -124,9 +127,9 @@ def extract_img_src(img, base_url):
     return ""
 
 
-def find_cover_image(soup, config, link):
-    """Многоступенчатый поиск чистой обложки."""
-    # 1. По явному селектору (если задан)
+def find_cover_image(soup, config, link, rss_entry=None):
+    """Многоступенчатый поиск чистой обложки (с fallback на RSS)."""
+    # 1. Явный селектор
     cover_tag = config.get("cover_tag")
     if cover_tag:
         tag_name, class_name = cover_tag
@@ -143,7 +146,7 @@ def find_cover_image(soup, config, link):
                 if src and not is_stub_image(src):
                     return src
 
-    # 2. Внутри контейнера с текстом (самый чистый вариант)
+    # 2. Контейнер с текстом
     for tag_name, class_name in config.get("text_tags", []):
         container = soup.find(tag_name, class_=class_name)
         if not container:
@@ -160,7 +163,7 @@ def find_cover_image(soup, config, link):
         if src and not is_stub_image(src):
             return src
 
-    # 4. По общим классам обложек
+    # 4. Общие классы
     for cls in ("article__image", "article-image", "picture__image", "article_image"):
         img = soup.find("img", class_=cls)
         if img:
@@ -168,7 +171,7 @@ def find_cover_image(soup, config, link):
             if src and not is_stub_image(src):
                 return src
 
-    # 5. Внутри <article>
+    # 5. <article>
     article = soup.find("article")
     if article:
         for img in article.find_all("img"):
@@ -176,12 +179,35 @@ def find_cover_image(soup, config, link):
             if src and not is_stub_image(src):
                 return src
 
-    # 6. og:image (последний шанс, с проверкой на заглушку)
+    # 6. og:image (с проверкой)
     og_img = soup.find("meta", property="og:image")
     if og_img and og_img.get("content"):
         url = og_img["content"]
         if not is_stub_image(url):
             return url
+
+    # 7. RSS-медиа (fallback)
+    if rss_entry:
+        # media_content
+        media = rss_entry.get("media_content")
+        if media and isinstance(media, list) and media[0].get("url"):
+            url = media[0]["url"]
+            if not is_stub_image(url):
+                return url
+        # media_thumbnail
+        thumb = rss_entry.get("media_thumbnail")
+        if thumb and isinstance(thumb, list) and thumb[0].get("url"):
+            url = thumb[0]["url"]
+            if not is_stub_image(url):
+                return url
+        # enclosures
+        enclosures = rss_entry.get("enclosures")
+        if enclosures and isinstance(enclosures, list):
+            for enc in enclosures:
+                if enc.get("type", "").startswith("image/") and enc.get("href"):
+                    url = enc["href"]
+                    if not is_stub_image(url):
+                        return url
 
     return ""
 
@@ -206,6 +232,7 @@ def get_news_links_rss(site_key):
             "title": entry.get("title", "Без заголовка"),
             "link": entry.get("link", ""),
             "rss_description": entry.get("description", ""),
+            "rss_entry": entry,
         })
     return articles
 
@@ -296,6 +323,7 @@ def parse_full_article(article_data, site_key):
     title = article_data['title']
     link = article_data['link']
     rss_desc = article_data['rss_description']
+    rss_entry = article_data.get('rss_entry')
 
     text_md = ""
     cover_url = ""
@@ -315,7 +343,7 @@ def parse_full_article(article_data, site_key):
             clean_rss = re.sub(r'<[^>]+>', '', rss_desc)
             text_md = text_to_markdown(clean_rss.strip())
 
-        cover_url = find_cover_image(soup, config, link)
+        cover_url = find_cover_image(soup, config, link, rss_entry)
 
         print(f"  📄 Текст: {len(full_text)} симв., обложка: {'есть' if cover_url else 'нет'}")
 
@@ -374,6 +402,8 @@ def import_news_to_django(site_key="lenta", author_username="sulik"):
         return
 
     created_count = 0
+    skipped_no_cover = 0
+
     for i, data in enumerate(articles_data, 1):
         print(f"[{i}/{len(articles_data)}] {data['title']}")
 
@@ -381,6 +411,12 @@ def import_news_to_django(site_key="lenta", author_username="sulik"):
 
         if Post.objects.filter(title=article['title']).exists():
             print("  ⏩ Уже есть в базе.")
+            continue
+
+        # Пропускаем статьи без обложки (чтобы не было постов без фото)
+        if not article['cover_url']:
+            print("  ⚠️ Обложка не найдена — пропускаем.")
+            skipped_no_cover += 1
             continue
 
         excerpt_text = re.sub(r'[#*>`_\[\]]', '', article['text_md'])[:200].strip()
@@ -394,18 +430,18 @@ def import_news_to_django(site_key="lenta", author_username="sulik"):
             category=default_category,
         )
 
-        if article['cover_url']:
-            try:
-                img_response = requests.get(article['cover_url'], headers=HEADERS, timeout=10)
-                img_response.raise_for_status()
-                ext = article['cover_url'].split('.')[-1].split('?')[0]
-                if ext.lower() not in ('jpg', 'jpeg', 'png', 'gif', 'webp'):
-                    ext = 'jpg'
-                filename = f"{uuid.uuid4().hex}.{ext}"
-                post.cover.save(filename, ContentFile(img_response.content), save=False)
-                print("  🖼️  Обложка скачана.")
-            except Exception as e:
-                print(f"  ⚠️  Ошибка обложки: {e}")
+        try:
+            img_response = requests.get(article['cover_url'], headers=HEADERS, timeout=10)
+            img_response.raise_for_status()
+            ext = article['cover_url'].split('.')[-1].split('?')[0]
+            if ext.lower() not in ('jpg', 'jpeg', 'png', 'gif', 'webp'):
+                ext = 'jpg'
+            filename = f"{uuid.uuid4().hex}.{ext}"
+            post.cover.save(filename, ContentFile(img_response.content), save=False)
+            print("  🖼️  Обложка скачана.")
+        except Exception as e:
+            print(f"  ⚠️  Ошибка скачивания обложки: {e}")
+            continue
 
         try:
             post.save()
@@ -417,4 +453,4 @@ def import_news_to_django(site_key="lenta", author_username="sulik"):
 
         time.sleep(2)
 
-    print(f"\n🎉 Импорт завершён! Создано: {created_count}")
+    print(f"\n🎉 Импорт завершён! Создано: {created_count}, пропущено (без обложки): {skipped_no_cover}")
