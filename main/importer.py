@@ -18,7 +18,7 @@ HEADERS = {
 }
 
 # ═══════════════════════════════════════════════════════════════
-# РАБОЧИЕ ИСТОЧНИКИ
+# НАСТРОЙКИ ИСТОЧНИКОВ
 # ═══════════════════════════════════════════════════════════════
 SITES = {
     "lenta": {
@@ -26,6 +26,7 @@ SITES = {
         "rss_url": "https://lenta.ru/rss",
         "title_tag": ("h1", "topic-body__titles"),
         "text_tags": [("p", "topic-body__content-text")],
+        "cover_tag": ("img", "picture__image"),
     },
     "rt": {
         "name": "RT",
@@ -34,8 +35,8 @@ SITES = {
         "text_tags": [
             ("div", "article__text"),
             ("div", "article__text-paragraph"),
-            ("p", "article__text-paragraph"),
         ],
+        "cover_tag": None,
     },
     "rg": {
         "name": "Российская газета",
@@ -44,8 +45,8 @@ SITES = {
         "text_tags": [
             ("div", "article__text"),
             ("div", "text-content"),
-            ("div", "PageTextContent"),
         ],
+        "cover_tag": ("img", "article__image"),
     },
     "ria": {
         "name": "РИА Новости",
@@ -54,8 +55,8 @@ SITES = {
         "text_tags": [
             ("div", "article__text"),
             ("div", "article__body"),
-            ("div", "article__block"),
         ],
+        "cover_tag": ("img", "article__image"),
     },
     "iz": {
         "name": "Известия",
@@ -65,6 +66,7 @@ SITES = {
             ("div", "article_text"),
             ("div", "text-ib"),
         ],
+        "cover_tag": None,
     },
 }
 
@@ -72,9 +74,20 @@ PHOTO_CAPTION_PATTERNS = [
     r'^Фото:', r'^Иллюстрация:', r'^Изображение:', r'^Picture:', r'^Image:',
 ]
 
+STUB_IMAGE_PATTERNS = [
+    r'placeholder', r'stub', r'blank', r'default', r'logo',
+    r'icon', r'favicon', r'sprite', r'1x1', r'pixel',
+]
+
 
 def is_photo_caption(text):
     return any(re.match(p, text.strip(), re.IGNORECASE) for p in PHOTO_CAPTION_PATTERNS)
+
+
+def is_stub_image(url):
+    """Проверяет, является ли URL заглушкой или иконкой."""
+    low = url.lower()
+    return any(re.search(p, low) for p in STUB_IMAGE_PATTERNS)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -82,11 +95,13 @@ def is_photo_caption(text):
 # ═══════════════════════════════════════════════════════════════
 
 def extract_img_src(img, base_url):
-    """Достаёт URL из src, data-src или srcset (наибольшее разрешение)."""
+    """Извлекает URL из src, data-src или srcset (наибольшее разрешение)."""
+    # 1. data-src (ленивая загрузка — Известия, РИА)
     src = img.get("data-src") or img.get("data-original") or img.get("src")
     if src and not src.startswith("data:"):
         return requests.compat.urljoin(base_url, src)
 
+    # 2. srcset (берём максимальную ширину)
     srcset = img.get("srcset") or img.get("data-srcset")
     if srcset:
         candidates = []
@@ -109,17 +124,26 @@ def extract_img_src(img, base_url):
     return ""
 
 
-def is_stub_image(url):
-    """Проверяет, является ли URL заглушкой или иконкой."""
-    low = url.lower()
-    bad = ["placeholder", "stub", "blank", "default", "logo", "icon",
-           "favicon", "apple-touch", "sprite", "1x1", "pixel"]
-    return any(w in low for w in bad)
-
-
 def find_cover_image(soup, config, link):
-    """Умный поиск чистой обложки (без заглушек и текста)."""
-    # 1. Внутри контейнера с текстом
+    """Многоступенчатый поиск чистой обложки."""
+    # 1. По явному селектору (если задан)
+    cover_tag = config.get("cover_tag")
+    if cover_tag:
+        tag_name, class_name = cover_tag
+        element = soup.find(tag_name, class_=class_name)
+        if element:
+            if element.name == "div":
+                img = element.find("img")
+                if img:
+                    src = extract_img_src(img, link)
+                    if src and not is_stub_image(src):
+                        return src
+            elif element.name == "img":
+                src = extract_img_src(element, link)
+                if src and not is_stub_image(src):
+                    return src
+
+    # 2. Внутри контейнера с текстом (самый чистый вариант)
     for tag_name, class_name in config.get("text_tags", []):
         container = soup.find(tag_name, class_=class_name)
         if not container:
@@ -129,14 +153,14 @@ def find_cover_image(soup, config, link):
             if src and not is_stub_image(src):
                 return src
 
-    # 2. itemprop="image"
+    # 3. itemprop="image"
     img = soup.find("img", attrs={"itemprop": "image"})
     if img:
         src = extract_img_src(img, link)
         if src and not is_stub_image(src):
             return src
 
-    # 3. img с классами обложек
+    # 4. По общим классам обложек
     for cls in ("article__image", "article-image", "picture__image", "article_image"):
         img = soup.find("img", class_=cls)
         if img:
@@ -144,7 +168,7 @@ def find_cover_image(soup, config, link):
             if src and not is_stub_image(src):
                 return src
 
-    # 4. Любая картинка внутри <article>
+    # 5. Внутри <article>
     article = soup.find("article")
     if article:
         for img in article.find_all("img"):
@@ -152,10 +176,12 @@ def find_cover_image(soup, config, link):
             if src and not is_stub_image(src):
                 return src
 
-    # 5. og:image — только если не заглушка
-    og = soup.find("meta", property="og:image")
-    if og and og.get("content") and not is_stub_image(og["content"]):
-        return og["content"]
+    # 6. og:image (последний шанс, с проверкой на заглушку)
+    og_img = soup.find("meta", property="og:image")
+    if og_img and og_img.get("content"):
+        url = og_img["content"]
+        if not is_stub_image(url):
+            return url
 
     return ""
 
@@ -191,6 +217,7 @@ def get_news_links_rss(site_key):
 def extract_text(soup, config, rss_desc):
     text_parts = []
 
+    # 1. По селекторам
     for tag_name, class_name in config.get("text_tags", []):
         elements = soup.find_all(tag_name, class_=class_name)
         if not elements:
@@ -214,6 +241,7 @@ def extract_text(soup, config, rss_desc):
         if text_parts:
             break
 
+    # 2. <article>
     if not text_parts:
         article = soup.find("article")
         if article:
@@ -226,6 +254,7 @@ def extract_text(soup, config, rss_desc):
                 if txt and len(txt) > 100:
                     text_parts.append(txt)
 
+    # 3. Самый большой <div>
     if not text_parts:
         best_div = None
         best_len = 0
@@ -248,6 +277,7 @@ def extract_text(soup, config, rss_desc):
                 if txt and len(txt) > 100:
                     text_parts.append(txt)
 
+    # Дедупликация
     seen = set()
     unique = []
     for t in text_parts:
