@@ -20,6 +20,8 @@ HEADERS = {
 # ═══════════════════════════════════════════════════════════════
 # НАСТРОЙКИ ИСТОЧНИКОВ
 # ═══════════════════════════════════════════════════════════════
+# ... (начало файла без изменений)
+
 SITES = {
     "lenta": {
         "name": "Lenta.ru",
@@ -60,15 +62,22 @@ SITES = {
     },
     "iz": {
         "name": "Известия",
-        "rss_url": "https://iz.ru/xml/rss/all.xml",
+        # ИЗМЕНЕНО: используем альтернативную ленту вместо заблокированной all.xml
+        "rss_url": "https://iz.ru/xml/rss/news.xml", 
         "title_tag": ("h1", "article_title"),
         "text_tags": [
             ("div", "article_text"),
             ("div", "text-ib"),
         ],
+        "text_container": [
+            ("div", {"role": "article"}),
+            ("div", {"itemprop": "articleBody"}),
+        ],
         "cover_tag": None,
     },
 }
+
+# ... (остальная часть файла без изменений)
 
 PHOTO_CAPTION_PATTERNS = [
     r'^Фото:', r'^Иллюстрация:', r'^Изображение:', r'^Picture:', r'^Image:',
@@ -146,9 +155,14 @@ def find_cover_image(soup, config, link, rss_entry=None):
                 if src and not is_stub_image(src):
                     return src
 
-    # 2. Контейнер с текстом
-    for tag_name, class_name in config.get("text_tags", []):
-        container = soup.find(tag_name, class_=class_name)
+    # 2. Контейнер с текстом (включая новые селекторы для iz.ru)
+    text_selectors = config.get("text_tags", [])
+    text_selectors += config.get("text_container", [])
+    for tag_name, class_name in text_selectors:
+        if isinstance(class_name, dict):
+            container = soup.find(tag_name, attrs=class_name)
+        else:
+            container = soup.find(tag_name, class_=class_name)
         if not container:
             continue
         for img in container.find_all("img"):
@@ -164,7 +178,8 @@ def find_cover_image(soup, config, link, rss_entry=None):
             return src
 
     # 4. Общие классы
-    for cls in ("article__image", "article-image", "picture__image", "article_image"):
+    for cls in ("article__image", "article-image", "picture__image", "article_image",
+                "article__picture", "article__lead-image"):
         img = soup.find("img", class_=cls)
         if img:
             src = extract_img_src(img, link)
@@ -188,19 +203,16 @@ def find_cover_image(soup, config, link, rss_entry=None):
 
     # 7. RSS-медиа (fallback)
     if rss_entry:
-        # media_content
         media = rss_entry.get("media_content")
         if media and isinstance(media, list) and media[0].get("url"):
             url = media[0]["url"]
             if not is_stub_image(url):
                 return url
-        # media_thumbnail
         thumb = rss_entry.get("media_thumbnail")
         if thumb and isinstance(thumb, list) and thumb[0].get("url"):
             url = thumb[0]["url"]
             if not is_stub_image(url):
                 return url
-        # enclosures
         enclosures = rss_entry.get("enclosures")
         if enclosures and isinstance(enclosures, list):
             for enc in enclosures:
@@ -244,9 +256,14 @@ def get_news_links_rss(site_key):
 def extract_text(soup, config, rss_desc):
     text_parts = []
 
-    # 1. По селекторам
-    for tag_name, class_name in config.get("text_tags", []):
-        elements = soup.find_all(tag_name, class_=class_name)
+    # 1. По селекторам (включая новые для iz.ru)
+    selectors = config.get("text_tags", [])
+    selectors += config.get("text_container", [])
+    for tag_name, class_name in selectors:
+        if isinstance(class_name, dict):
+            elements = soup.find_all(tag_name, attrs=class_name)
+        else:
+            elements = soup.find_all(tag_name, class_=class_name)
         if not elements:
             continue
         for el in elements:
@@ -281,7 +298,7 @@ def extract_text(soup, config, rss_desc):
                 if txt and len(txt) > 100:
                     text_parts.append(txt)
 
-    # 3. Самый большой <div>
+    # 3. Самый большой <div> (запасной вариант)
     if not text_parts:
         best_div = None
         best_len = 0
@@ -413,7 +430,6 @@ def import_news_to_django(site_key="lenta", author_username="sulik"):
             print("  ⏩ Уже есть в базе.")
             continue
 
-        # Пропускаем статьи без обложки (чтобы не было постов без фото)
         if not article['cover_url']:
             print("  ⚠️ Обложка не найдена — пропускаем.")
             skipped_no_cover += 1
