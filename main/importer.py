@@ -17,9 +17,6 @@ HEADERS = {
     "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
-# ═══════════════════════════════════════════════════════════════
-# НАСТРОЙКИ ИСТОЧНИКОВ
-# ═══════════════════════════════════════════════════════════════
 SITES = {
     "lenta": {
         "name": "Lenta.ru",
@@ -86,25 +83,17 @@ def is_photo_caption(text):
 
 
 def is_stub_image(url):
-    """Проверяет, является ли URL заглушкой или иконкой."""
     if not url:
         return True
     low = url.lower()
     return any(re.search(p, low) for p in STUB_IMAGE_PATTERNS)
 
 
-# ═══════════════════════════════════════════════════════════════
-# УТИЛИТЫ ДЛЯ ОБЛОЖЕК
-# ═══════════════════════════════════════════════════════════════
-
 def extract_img_src(img, base_url):
-    """Извлекает URL из src, data-src или srcset (наибольшее разрешение)."""
-    # 1. data-src (ленивая загрузка — Известия, РИА)
     src = img.get("data-src") or img.get("data-original") or img.get("src")
     if src and not src.startswith("data:"):
         return requests.compat.urljoin(base_url, src)
 
-    # 2. srcset (берём максимальную ширину)
     srcset = img.get("srcset") or img.get("data-srcset")
     if srcset:
         candidates = []
@@ -128,7 +117,6 @@ def extract_img_src(img, base_url):
 
 
 def find_cover_image(soup, config, link, rss_entry=None):
-    """Многоступенчатый поиск чистой обложки (с fallback на RSS)."""
     # 1. Явный селектор
     cover_tag = config.get("cover_tag")
     if cover_tag:
@@ -146,7 +134,7 @@ def find_cover_image(soup, config, link, rss_entry=None):
                 if src and not is_stub_image(src):
                     return src
 
-    # 2. Контейнер с текстом
+    # 2. Внутри контейнера с текстом
     for tag_name, class_name in config.get("text_tags", []):
         container = soup.find(tag_name, class_=class_name)
         if not container:
@@ -155,6 +143,19 @@ def find_cover_image(soup, config, link, rss_entry=None):
             src = extract_img_src(img, link)
             if src and not is_stub_image(src):
                 return src
+
+    # 2.5. Универсально: внутри role="article" или itemprop="articleBody"
+    for selector in [
+        {"name": "div", "attrs": {"role": "article"}},
+        {"name": "div", "attrs": {"itemprop": "articleBody"}},
+        {"name": "article", "attrs": {}},
+    ]:
+        container = soup.find(**selector)
+        if container:
+            for img in container.find_all("img"):
+                src = extract_img_src(img, link)
+                if src and not is_stub_image(src):
+                    return src
 
     # 3. itemprop="image"
     img = soup.find("img", attrs={"itemprop": "image"})
@@ -179,28 +180,25 @@ def find_cover_image(soup, config, link, rss_entry=None):
             if src and not is_stub_image(src):
                 return src
 
-    # 6. og:image (с проверкой)
+    # 6. og:image
     og_img = soup.find("meta", property="og:image")
     if og_img and og_img.get("content"):
         url = og_img["content"]
         if not is_stub_image(url):
             return url
 
-    # 7. RSS-медиа (fallback)
+    # 7. RSS-медиа
     if rss_entry:
-        # media_content
         media = rss_entry.get("media_content")
         if media and isinstance(media, list) and media[0].get("url"):
             url = media[0]["url"]
             if not is_stub_image(url):
                 return url
-        # media_thumbnail
         thumb = rss_entry.get("media_thumbnail")
         if thumb and isinstance(thumb, list) and thumb[0].get("url"):
             url = thumb[0]["url"]
             if not is_stub_image(url):
                 return url
-        # enclosures
         enclosures = rss_entry.get("enclosures")
         if enclosures and isinstance(enclosures, list):
             for enc in enclosures:
@@ -211,10 +209,6 @@ def find_cover_image(soup, config, link, rss_entry=None):
 
     return ""
 
-
-# ═══════════════════════════════════════════════════════════════
-# RSS
-# ═══════════════════════════════════════════════════════════════
 
 def get_news_links_rss(site_key):
     config = SITES[site_key]
@@ -236,10 +230,6 @@ def get_news_links_rss(site_key):
         })
     return articles
 
-
-# ═══════════════════════════════════════════════════════════════
-# ИЗВЛЕЧЕНИЕ ТЕКСТА
-# ═══════════════════════════════════════════════════════════════
 
 def extract_text(soup, config, rss_desc):
     text_parts = []
@@ -268,18 +258,28 @@ def extract_text(soup, config, rss_desc):
         if text_parts:
             break
 
-    # 2. <article>
+    # 2. Универсально: role="article" или itemprop="articleBody"
     if not text_parts:
-        article = soup.find("article")
-        if article:
-            for p in article.find_all("p"):
-                txt = p.get_text(separator=" ", strip=True)
-                if txt and not is_photo_caption(txt) and len(txt) > 15:
-                    text_parts.append(txt)
+        for selector in [
+            {"name": "div", "attrs": {"role": "article"}},
+            {"name": "div", "attrs": {"itemprop": "articleBody"}},
+            {"name": "article", "attrs": {}},
+        ]:
+            container = soup.find(**selector)
+            if not container:
+                continue
+            inner_ps = container.find_all("p")
+            if inner_ps:
+                for p in inner_ps:
+                    txt = p.get_text(separator=" ", strip=True)
+                    if txt and not is_photo_caption(txt) and len(txt) > 15:
+                        text_parts.append(txt)
             if not text_parts:
-                txt = article.get_text(separator=" ", strip=True)
+                txt = container.get_text(separator=" ", strip=True)
                 if txt and len(txt) > 100:
                     text_parts.append(txt)
+            if text_parts:
+                break
 
     # 3. Самый большой <div>
     if not text_parts:
@@ -304,7 +304,6 @@ def extract_text(soup, config, rss_desc):
                 if txt and len(txt) > 100:
                     text_parts.append(txt)
 
-    # Дедупликация
     seen = set()
     unique = []
     for t in text_parts:
@@ -313,10 +312,6 @@ def extract_text(soup, config, rss_desc):
             unique.append(t)
     return "\n\n".join(unique)
 
-
-# ═══════════════════════════════════════════════════════════════
-# ПАРСИНГ ОДНОЙ СТАТЬИ
-# ═══════════════════════════════════════════════════════════════
 
 def parse_full_article(article_data, site_key):
     config = SITES[site_key]
@@ -354,10 +349,6 @@ def parse_full_article(article_data, site_key):
 
     return {"title": title, "text_md": text_md, "cover_url": cover_url, "source_url": link}
 
-
-# ═══════════════════════════════════════════════════════════════
-# СОХРАНЕНИЕ В DJANGO
-# ═══════════════════════════════════════════════════════════════
 
 def get_or_create_default_category():
     category, _ = Category.objects.get_or_create(name="Новости", defaults={'slug': 'novosti'})
@@ -413,7 +404,6 @@ def import_news_to_django(site_key="lenta", author_username="sulik"):
             print("  ⏩ Уже есть в базе.")
             continue
 
-        # Пропускаем статьи без обложки (чтобы не было постов без фото)
         if not article['cover_url']:
             print("  ⚠️ Обложка не найдена — пропускаем.")
             skipped_no_cover += 1
